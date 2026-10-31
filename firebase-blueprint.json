@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and statistics",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID of user" },
+        "displayName": { "type": "string", "description": "Display name of player" },
+        "email": { "type": "string", "description": "Email address of player" },
+        "wins": { "type": "integer", "description": "Number of matches won" },
+        "matchesPlayed": { "type": "integer", "description": "Total matches played" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["uid", "displayName", "wins", "matchesPlayed", "updatedAt"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Online multiplayer tank battle match session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Match document ID" },
+        "roomCode": { "type": "string", "description": "6-character join code" },
+        "status": { "type": "string", "description": "Match status (WAITING, ACTIVE, FINISHED)" },
+        "hostId": { "type": "string", "description": "Host player UID" },
+        "hostName": { "type": "string", "description": "Host player display name" },
+        "guestId": { "type": "string", "description": "Guest player UID" },
+        "guestName": { "type": "string", "description": "Guest player display name" },
+        "activePlayerIndex": { "type": "integer", "description": "0 for host turn, 1 for guest turn" },
+        "turnNumber": { "type": "integer", "description": "Current turn number" },
+        "wind": { "type": "number", "description": "Current wind speed vector (-100 to 100)" },
+        "terrainSeed": { "type": "integer", "description": "Procedural terrain generator seed" },
+        "hostHealth": { "type": "integer", "description": "Host tank HP (0-100)" },
+        "guestHealth": { "type": "integer", "description": "Guest tank HP (0-100)" },
+        "hostScore": { "type": "integer", "description": "Host round score" },
+        "guestScore": { "type": "integer", "description": "Guest round score" },
+        "hostX": { "type": "number", "description": "Host tank normalized X position" },
+        "hostY": { "type": "number", "description": "Host tank normalized Y position" },
+        "guestX": { "type": "number", "description": "Guest tank normalized X position" },
+        "guestY": { "type": "number", "description": "Guest tank normalized Y position" },
+        "lastAction": { "type": "string", "description": "Serialized last shot or action data" },
+        "winnerId": { "type": "string", "description": "UID of winner, or empty if ongoing" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["id", "roomCode", "status", "hostId", "hostName", "activePlayerIndex", "turnNumber", "wind", "terrainSeed", "hostHealth", "guestHealth", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles and stats"
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/Match" },
+      "description": "Online multiplayer tank matches"
+    }
+  }
+}

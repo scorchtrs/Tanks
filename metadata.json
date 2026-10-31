@@ -1,0 +1,6 @@
+{
+  "name": "Scorched Tanks",
+  "description": "Classic turn-based artillery tank battle game with deformable terrain, wind physics, AI opponents, and an explosive arsenal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -37,18 +37,19 @@ class BallisticsEngine(
             return null
         }
 
+        val elapsed = proj.customData + dt
+        val clampedX = nextX.coerceIn(0f, terrain.worldWidth)
+        val groundY = terrain.getHeightAt(clampedX)
+
         // Check MIRV / Death's Head split condition: at the top of its flight (apogee where vy crosses 0)
         if ((proj.weaponType == WeaponType.MIRV || proj.weaponType == WeaponType.DEATHS_HEAD) && !proj.isSubmunition) {
-            val reachedApogee = (proj.vy <= 0f && currentVy >= 0f) || (proj.vy > 0f && proj.customData > 0.8f)
-            val isAboveGround = nextY < terrain.getHeightAt(nextX.coerceIn(0f, terrain.worldWidth)) - 30f
+            val reachedApogee = (proj.vy <= 0f && currentVy >= 0f) || (proj.vy > 0f && elapsed > 0.6f)
+            val isAboveGround = nextY < groundY - 15f
             if (reachedApogee && isAboveGround) {
-                onSplitMirv(proj.copy(x = nextX, y = nextY, vx = currentVx, vy = currentVy))
+                onSplitMirv(proj.copy(x = nextX, y = nextY, vx = currentVx, vy = currentVy, customData = elapsed))
                 return null
             }
         }
-
-        val clampedX = nextX.coerceIn(0f, terrain.worldWidth)
-        val groundY = terrain.getHeightAt(clampedX)
 
         // DIGGER mechanic: can burrow underground up to 45px before detonating
         if (proj.weaponType == WeaponType.DIGGER) {
@@ -128,6 +129,7 @@ class BallisticsEngine(
             y = nextY,
             vx = currentVx,
             vy = currentVy,
+            customData = elapsed,
             trail = updatedTrail
         )
     }

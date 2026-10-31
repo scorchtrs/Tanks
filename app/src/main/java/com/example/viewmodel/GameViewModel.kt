@@ -444,6 +444,7 @@ class GameViewModel : ViewModel() {
                 if (curProjs.isNotEmpty()) {
                     hasActiveObjects = true
                     val nextProjs = mutableListOf<Projectile>()
+                    val spawnedFromSplits = mutableListOf<Projectile>()
                     for (p in curProjs) {
                         val stepped = ballistics.stepProjectile(
                             proj = p,
@@ -454,13 +455,15 @@ class GameViewModel : ViewModel() {
                                 handleDetonation(detonatedProj, dx, dy)
                             },
                             onSplitMirv = { mirvProj ->
-                                handleMirvSplit(mirvProj)
+                                val subs = handleMirvSplit(mirvProj)
+                                spawnedFromSplits.addAll(subs)
                             }
                         )
                         if (stepped != null) {
                             nextProjs.add(stepped)
                         }
                     }
+                    nextProjs.addAll(spawnedFromSplits)
                     _projectiles.value = nextProjs
                 }
 
@@ -506,43 +509,52 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    private fun handleMirvSplit(parent: Projectile) {
+    private fun handleMirvSplit(parent: Projectile): List<Projectile> {
         val isDeathsHead = parent.weaponType == WeaponType.DEATHS_HEAD
         audio.playExplosionSound(isBig = isDeathsHead)
         val count = if (isDeathsHead) 6 else 3
         val submunitions = mutableListOf<Projectile>()
         for (i in 0 until count) {
-            val spread = if (count == 3) {
+            val spreadX = if (count == 3) {
                 when (i) {
-                    0 -> -36f
+                    0 -> -32f
                     1 -> 0f
-                    else -> 36f
+                    else -> 32f
                 }
             } else {
-                -50f + (100f * i / (count - 1).coerceAtLeast(1))
+                -55f + (110f * i / (count - 1).coerceAtLeast(1))
+            }
+            val spreadY = if (count == 3) {
+                when (i) {
+                    1 -> 12f // Center warhead drives downward along trajectory
+                    else -> 5f // Flank warheads spread outward
+                }
+            } else {
+                8f + (i % 2) * 6f
             }
             submunitions.add(
                 Projectile(
                     id = nextProjId++,
                     ownerId = parent.ownerId,
-                    weaponType = if (isDeathsHead) WeaponType.BABY_NUKE else WeaponType.BABY_MISSILE,
+                    weaponType = if (isDeathsHead) WeaponType.DEATHS_HEAD else WeaponType.MIRV,
                     x = parent.x,
                     y = parent.y,
-                    vx = parent.vx + spread,
-                    vy = parent.vy + (if (isDeathsHead) 12f else 18f),
+                    vx = parent.vx + spreadX,
+                    vy = parent.vy + spreadY,
                     isSubmunition = true,
-                    isDoubleDamage = parent.isDoubleDamage
+                    isDoubleDamage = parent.isDoubleDamage,
+                    isHyperVelocity = parent.isHyperVelocity
                 )
             )
         }
-        _projectiles.value = _projectiles.value.filter { it.id != parent.id } + submunitions
-        spawnExplosionParticles(parent.x, parent.y, if (isDeathsHead) 45f else 25f, if (isDeathsHead) Color(0xFFD500F9) else Color(0xFF00E5FF))
+        spawnExplosionParticles(parent.x, parent.y, if (isDeathsHead) 45f else 28f, if (isDeathsHead) Color(0xFFD500F9) else Color(0xFF00E5FF))
         addFloatingText(
             if (isDeathsHead) "DEATH'S HEAD 6x SPLIT!" else "MIRV 3x SPLIT!",
             parent.x,
             parent.y - 18f,
             if (isDeathsHead) Color(0xFFD500F9) else Color(0xFF00E5FF)
         )
+        return submunitions
     }
 
     private fun handleDetonation(proj: Projectile, cx: Float, cy: Float) {

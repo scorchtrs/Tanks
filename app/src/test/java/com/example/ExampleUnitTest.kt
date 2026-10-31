@@ -117,4 +117,50 @@ class ExampleUnitTest {
         assertTrue("MIRV should trigger split at top of flight", splitTriggered)
         assertNotNull(splitProj)
     }
+
+    @Test
+    fun testMirvSubmunitionsFlyAndDetonate() {
+        val terrain = TerrainEngine(pointCount = 200, worldWidth = 800f, worldHeight = 500f)
+        terrain.generate(seed = 42L)
+        val ballistics = BallisticsEngine(gravity = 260f)
+
+        // Spawn 3 submunitions as created by handleMirvSplit at apogee
+        val submunitions = listOf(-32f, 0f, 32f).mapIndexed { idx, spreadX ->
+            Projectile(
+                id = 100L + idx,
+                ownerId = 0,
+                weaponType = WeaponType.MIRV,
+                x = 250f,
+                y = 100f,
+                vx = 50f + spreadX,
+                vy = 8f,
+                isSubmunition = true
+            )
+        }
+
+        var detonatedCount = 0
+        var secondarySplitTriggered = false
+
+        for (sub in submunitions) {
+            var current: Projectile? = sub
+            for (step in 0 until 80) {
+                if (current == null) break
+                current = ballistics.stepProjectile(
+                    proj = current,
+                    dt = 0.05f,
+                    windSpeed = 5f,
+                    terrain = terrain,
+                    onDetonate = { _, _, _ ->
+                        detonatedCount++
+                    },
+                    onSplitMirv = {
+                        secondarySplitTriggered = true
+                    }
+                )
+            }
+        }
+
+        assertTrue("Secondary split should NOT trigger for submunitions", !secondarySplitTriggered)
+        assertTrue("All 3 submunitions should fly to the ground and detonate", detonatedCount == 3)
+    }
 }

@@ -69,6 +69,7 @@ fun TurnIndicator(
     currentRound: Int,
     totalRounds: Int,
     isFiring: Boolean,
+    isReplaying: Boolean = false,
     localPlayerIndex: Int,
     isCheckingRemote: Boolean,
     onCheckRemoteTurn: () -> Unit,
@@ -97,6 +98,7 @@ fun TurnIndicator(
                 currentRound = currentRound,
                 totalRounds = totalRounds,
                 isFiring = isFiring,
+                isReplaying = isReplaying,
                 localPlayerIndex = localPlayerIndex,
                 isCheckingRemote = isCheckingRemote,
                 onCheckRemoteTurn = onCheckRemoteTurn,
@@ -425,6 +427,7 @@ private fun CorrespondenceTurnIndicator(
     currentRound: Int,
     totalRounds: Int,
     isFiring: Boolean,
+    isReplaying: Boolean = false,
     localPlayerIndex: Int,
     isCheckingRemote: Boolean,
     onCheckRemoteTurn: () -> Unit,
@@ -435,7 +438,11 @@ private fun CorrespondenceTurnIndicator(
     modifier: Modifier = Modifier
 ) {
     val isMyTurn = activeTank.id == localPlayerIndex
-    val roleColor = if (isMyTurn) Color(0xFF10B981) else Color(0xFFF59E0B) // Green for Your Turn, Amber for Waiting
+    val roleColor = when {
+        isReplaying -> Color(0xFFF59E0B) // Amber for Replaying
+        isMyTurn -> Color(0xFF10B981) // Green for Your Turn
+        else -> Color(0xFFF59E0B) // Amber for Waiting
+    }
     val borderColor = roleColor.copy(alpha = pulseAlpha)
 
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -467,7 +474,16 @@ private fun CorrespondenceTurnIndicator(
                         .border(1.dp, roleColor, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isMyTurn) {
+                    if (isReplaying) {
+                        Icon(
+                            imageVector = Icons.Default.HourglassTop,
+                            contentDescription = "Replaying Action",
+                            tint = roleColor,
+                            modifier = Modifier
+                                .size(if (isLandscape) 16.dp else 20.dp)
+                                .alpha(pulseAlpha)
+                        )
+                    } else if (isMyTurn) {
                         Icon(
                             imageVector = Icons.Default.Adjust,
                             contentDescription = "Your Turn",
@@ -499,7 +515,11 @@ private fun CorrespondenceTurnIndicator(
                                 .padding(horizontal = 6.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = if (isMyTurn) "YOUR MOVE" else "WAITING FOR OPPONENT",
+                                text = when {
+                                    isReplaying -> "REPLAYING MOVE"
+                                    isMyTurn -> "YOUR MOVE"
+                                    else -> "WAITING FOR OPPONENT"
+                                },
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color.Black,
@@ -550,13 +570,13 @@ private fun CorrespondenceTurnIndicator(
 
                     if (!isLandscape) {
                         Text(
-                            text = if (isMyTurn) {
-                                "${activeTank.name}, take aim & fire to save shot to MariaDB on trsbox.net."
-                            } else {
-                                "Waiting for ${activeTank.name} to fire. Tap SYNC DB to check for their move."
+                            text = when {
+                                isReplaying -> "Replaying opponent's last move prior to your turn..."
+                                isMyTurn -> "${activeTank.name}, take aim & fire to save shot to MariaDB on trsbox.net."
+                                else -> "Waiting for ${activeTank.name} to fire. Tap SYNC DB to check for their move."
                             },
                             fontSize = 10.sp,
-                            color = if (isMyTurn) Color(0xFF86EFAC) else Color(0xFFFDE68A)
+                            color = if (isMyTurn && !isReplaying) Color(0xFF86EFAC) else Color(0xFFFDE68A)
                         )
                     }
                 }

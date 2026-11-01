@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,8 +25,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -87,6 +96,7 @@ fun GameScreen(
     val matchWinner by viewModel.matchWinner.collectAsState()
     val lastTurnCode by viewModel.lastTurnCode.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val replayState by viewModel.replayState.collectAsState()
 
     var isMuted by remember { mutableStateOf(viewModel.audio.isMuted) }
     var isCheckingRemote by remember { mutableStateOf(false) }
@@ -319,7 +329,8 @@ fun GameScreen(
                     turnNumber = currentTurnNumber,
                     currentRound = currentRound,
                     totalRounds = settings.roundsCount,
-                    isFiring = screenState == GameScreenState.FIRING,
+                    isFiring = screenState == GameScreenState.FIRING || screenState == GameScreenState.REPLAYING,
+                    isReplaying = screenState == GameScreenState.REPLAYING,
                     localPlayerIndex = localPlayerIndex,
                     isCheckingRemote = isCheckingRemote,
                     onCheckRemoteTurn = {
@@ -358,19 +369,109 @@ fun GameScreen(
                     floatingTexts = floatingTexts,
                     trajectoryPoints = trajectoryPoints,
                     windSpeed = windSpeed,
-                    isFiring = screenState == GameScreenState.FIRING,
+                    isFiring = screenState == GameScreenState.FIRING || screenState == GameScreenState.REPLAYING,
                     onAimChange = { angle, power ->
-                        viewModel.setAimAngle(angle)
-                        viewModel.setAimPower(power)
+                        if (screenState != GameScreenState.REPLAYING) {
+                            viewModel.setAimAngle(angle)
+                            viewModel.setAimPower(power)
+                        }
                     }
                 )
+
+                // Replay Banner Overlay
+                if (screenState == GameScreenState.REPLAYING && replayState != null) {
+                    val rState = replayState!!
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 10.dp)
+                            .testTag("correspondence_replay_banner"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xF20F172A)),
+                        border = BorderStroke(1.5.dp, Color(0xFFF59E0B))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF59E0B).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FastRewind,
+                                    contentDescription = "Replay",
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "ACTION REPLAY: ${rState.shooterName.uppercase()}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFFF59E0B),
+                                        letterSpacing = 1.sp
+                                    )
+                                    Text(
+                                        text = " (Turn #${rState.turnNumber})",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                                Text(
+                                    text = "Fired ${rState.weaponName} • ${rState.angle.toInt()}° angle • ${rState.power.toInt()}% power",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            Button(
+                                onClick = { viewModel.skipReplay() },
+                                modifier = Modifier
+                                    .height(30.dp)
+                                    .testTag("skip_replay_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                border = BorderStroke(1.dp, Color(0xFF475569))
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "SKIP",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF38BDF8)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.FastForward,
+                                        contentDescription = "Skip Replay",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Bottom Tactical Control Deck (adaptive layout)
             if (activeTank != null) {
                 TacticalControlDeck(
                     activeTank = activeTank,
-                    isFiring = screenState == GameScreenState.FIRING,
+                    isFiring = screenState == GameScreenState.FIRING || screenState == GameScreenState.REPLAYING,
                     onMove = { direction -> viewModel.driveTank(direction) },
                     onAngleChange = { angle -> viewModel.setAimAngle(angle) },
                     onAngleAdjust = { delta -> viewModel.adjustAimAngle(delta) },

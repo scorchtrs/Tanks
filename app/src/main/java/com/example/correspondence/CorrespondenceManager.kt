@@ -29,6 +29,12 @@ data class CorrespondenceTurnData(
     val lastFiredAngle: Float = 0f,
     val lastFiredPower: Float = 0f,
     val lastWeaponName: String = "",
+    val lastFiredWindSpeed: Float = 0f,
+    val prevP1Health: Int = p1Health,
+    val prevP1Shield: Int = p1Shield,
+    val prevP2Health: Int = p2Health,
+    val prevP2Shield: Int = p2Shield,
+    val prevCraterCount: Int = craters.size,
     // Ground modifications (crater list cx, cy, radius, isAddDirt)
     val craters: List<CraterRecord> = emptyList(),
     // Active crates (type, x, isGrounded)
@@ -127,6 +133,12 @@ object CorrespondenceManager {
             act.put("ang", data.lastFiredAngle.toDouble())
             act.put("pwr", data.lastFiredPower.toDouble())
             act.put("wpn", data.lastWeaponName)
+            act.put("wnd", data.lastFiredWindSpeed.toDouble())
+            act.put("p1hp", data.prevP1Health)
+            act.put("p1sh", data.prevP1Shield)
+            act.put("p2hp", data.prevP2Health)
+            act.put("p2sh", data.prevP2Shield)
+            act.put("pcc", data.prevCraterCount)
             json.put("act", act)
         }
 
@@ -173,12 +185,24 @@ object CorrespondenceManager {
             var lastAngle = 0f
             var lastPower = 0f
             var lastWeapon = ""
+            var lastWind = json.optDouble("wind", 0.0).toFloat()
+            var prevP1Hp = -1
+            var prevP1Sh = -1
+            var prevP2Hp = -1
+            var prevP2Sh = -1
+            var prevCraterCount = -1
             if (json.has("act")) {
                 val act = json.getJSONObject("act")
                 lastPid = act.optInt("pid", -1)
                 lastAngle = act.optDouble("ang", 0.0).toFloat()
                 lastPower = act.optDouble("pwr", 0.0).toFloat()
                 lastWeapon = act.optString("wpn", "")
+                lastWind = act.optDouble("wnd", json.optDouble("wind", 0.0)).toFloat()
+                prevP1Hp = act.optInt("p1hp", -1)
+                prevP1Sh = act.optInt("p1sh", -1)
+                prevP2Hp = act.optInt("p2hp", -1)
+                prevP2Sh = act.optInt("p2sh", -1)
+                prevCraterCount = act.optInt("pcc", -1)
             }
 
             val cratersList = mutableListOf<CraterRecord>()
@@ -217,7 +241,12 @@ object CorrespondenceManager {
                 }
             }
 
-            val isOver = json.optBoolean("over", false) || (p1.optInt("hp", 100) <= 0 || p2.optInt("hp", 100) <= 0)
+            val p1Health = p1.optInt("hp", 100)
+            val p1Shield = p1.optInt("sh", 0)
+            val p2Health = p2.optInt("hp", 100)
+            val p2Shield = p2.optInt("sh", 0)
+
+            val isOver = json.optBoolean("over", false) || (p1Health <= 0 || p2Health <= 0)
             val winnerName = json.optString("win", "")
 
             return CorrespondenceTurnData(
@@ -226,18 +255,24 @@ object CorrespondenceManager {
                 seed = json.optLong("seed", 12345L),
                 windSpeed = json.optDouble("wind", 0.0).toFloat(),
                 activeTankIndex = json.optInt("activeIdx", 0),
-                p1Health = p1.optInt("hp", 100),
-                p1Shield = p1.optInt("sh", 0),
+                p1Health = p1Health,
+                p1Shield = p1Shield,
                 p1Cash = p1.optInt("cash", 200),
                 p1X = p1.optDouble("x", 120.0).toFloat(),
-                p2Health = p2.optInt("hp", 100),
-                p2Shield = p2.optInt("sh", 0),
+                p2Health = p2Health,
+                p2Shield = p2Shield,
                 p2Cash = p2.optInt("cash", 200),
                 p2X = p2.optDouble("x", 880.0).toFloat(),
                 lastFiredPlayerId = lastPid,
                 lastFiredAngle = lastAngle,
                 lastFiredPower = lastPower,
                 lastWeaponName = lastWeapon,
+                lastFiredWindSpeed = lastWind,
+                prevP1Health = if (prevP1Hp != -1) prevP1Hp else p1Health,
+                prevP1Shield = if (prevP1Sh != -1) prevP1Sh else p1Shield,
+                prevP2Health = if (prevP2Hp != -1) prevP2Hp else p2Health,
+                prevP2Shield = if (prevP2Sh != -1) prevP2Sh else p2Shield,
+                prevCraterCount = if (prevCraterCount != -1) prevCraterCount else maxOf(0, cratersList.size - 1),
                 craters = cratersList,
                 crates = cratesList,
                 isGameOver = isOver,

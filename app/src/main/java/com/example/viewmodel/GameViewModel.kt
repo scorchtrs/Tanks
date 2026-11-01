@@ -56,6 +56,15 @@ enum class GameScreenState {
     CORRESPONDENCE_SHARE
 }
 
+data class ReplayBannerState(
+    val shooterName: String,
+    val targetName: String,
+    val weaponName: String,
+    val angle: Float,
+    val power: Float,
+    val turnNumber: Int
+)
+
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     val terrain = TerrainEngine(pointCount = 500, worldWidth = 1000f, worldHeight = 600f)
@@ -123,6 +132,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val recordedCraters = mutableListOf<CraterRecord>()
     private var lastFiredData: CorrespondenceTurnData? = null
     private var simJob: Job? = null
+    private var replayJob: Job? = null
+    private var loadedTurnData: CorrespondenceTurnData? = null
+
+    private val _replayState = MutableStateFlow<ReplayBannerState?>(null)
+    val replayState: StateFlow<ReplayBannerState?> = _replayState.asStateFlow()
+
     private var nextCrateId = 1L
     private var nextProjId = 1L
     private var nextTextId = 1L
@@ -395,24 +410,32 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val burst = weapon.burstCount
 
         // Store last fired action for correspondence play
+        val t0 = _tanks.value.getOrNull(0)
+        val t1 = _tanks.value.getOrNull(1)
         lastFiredData = CorrespondenceTurnData(
-            turnNumber = (_roundScores.value.values.sum()) + 1,
+            turnNumber = _currentTurnNumber.value,
             roundNumber = _currentRound.value,
             seed = terrainSeed,
             windSpeed = _windSpeed.value,
             activeTankIndex = _activeTankIndex.value,
-            p1Health = _tanks.value[0].health,
-            p1Shield = _tanks.value[0].shield,
-            p1Cash = _tanks.value[0].cash,
-            p1X = _tanks.value[0].x,
-            p2Health = _tanks.value[1].health,
-            p2Shield = _tanks.value[1].shield,
-            p2Cash = _tanks.value[1].cash,
-            p2X = _tanks.value[1].x,
+            p1Health = t0?.health ?: 100,
+            p1Shield = t0?.shield ?: 0,
+            p1Cash = t0?.cash ?: 200,
+            p1X = t0?.x ?: 120f,
+            p2Health = t1?.health ?: 100,
+            p2Shield = t1?.shield ?: 0,
+            p2Cash = t1?.cash ?: 200,
+            p2X = t1?.x ?: 880f,
             lastFiredPlayerId = shooter.id,
             lastFiredAngle = shooter.aimAngle,
             lastFiredPower = shooter.aimPower,
             lastWeaponName = weapon.name,
+            lastFiredWindSpeed = _windSpeed.value,
+            prevP1Health = t0?.health ?: 100,
+            prevP1Shield = t0?.shield ?: 0,
+            prevP2Health = t1?.health ?: 100,
+            prevP2Shield = t1?.shield ?: 0,
+            prevCraterCount = recordedCraters.size,
             craters = recordedCraters.toList(),
             crates = _powerUpCrates.value.map { CrateRecord(it.type, it.x, it.isGrounded) }
         )
@@ -756,6 +779,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         lastFiredAngle = lastFiredData?.lastFiredAngle ?: 0f,
                         lastFiredPower = lastFiredData?.lastFiredPower ?: 0f,
                         lastWeaponName = lastFiredData?.lastWeaponName ?: "",
+                        lastFiredWindSpeed = lastFiredData?.lastFiredWindSpeed ?: 0f,
+                        prevP1Health = lastFiredData?.prevP1Health ?: (p1?.health ?: 0),
+                        prevP1Shield = lastFiredData?.prevP1Shield ?: (p1?.shield ?: 0),
+                        prevP2Health = lastFiredData?.prevP2Health ?: (p2?.health ?: 0),
+                        prevP2Shield = lastFiredData?.prevP2Shield ?: (p2?.shield ?: 0),
+                        prevCraterCount = lastFiredData?.prevCraterCount ?: maxOf(0, recordedCraters.size - 1),
                         craters = recordedCraters.toList(),
                         crates = _powerUpCrates.value.map { CrateRecord(it.type, it.x, it.isGrounded) },
                         isGameOver = true,
@@ -824,6 +853,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 lastFiredAngle = lastFiredData?.lastFiredAngle ?: 0f,
                 lastFiredPower = lastFiredData?.lastFiredPower ?: 0f,
                 lastWeaponName = lastFiredData?.lastWeaponName ?: "",
+                lastFiredWindSpeed = lastFiredData?.lastFiredWindSpeed ?: 0f,
+                prevP1Health = lastFiredData?.prevP1Health ?: (p1?.health ?: 100),
+                prevP1Shield = lastFiredData?.prevP1Shield ?: (p1?.shield ?: 0),
+                prevP2Health = lastFiredData?.prevP2Health ?: (p2?.health ?: 100),
+                prevP2Shield = lastFiredData?.prevP2Shield ?: (p2?.shield ?: 0),
+                prevCraterCount = lastFiredData?.prevCraterCount ?: maxOf(0, recordedCraters.size - 1),
                 craters = recordedCraters.toList(),
                 crates = _powerUpCrates.value.map { CrateRecord(it.type, it.x, it.isGrounded) },
                 isGameOver = false,
@@ -1040,6 +1075,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun returnToMenu() {
+        replayJob?.cancel()
+        simJob?.cancel()
+        _projectiles.value = emptyList()
+        _particles.value = emptyList()
+        _replayState.value = null
         _screenState.value = GameScreenState.MENU
     }
 
@@ -1078,19 +1118,42 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Load correspondence turn code from clipboard or input.
+     * Load correspondence turn code from clipboard or database.
+     * Replays the last player's actions prior to allowing the current player to take actions.
      */
     fun loadCorrespondenceTurn(code: String, p1Name: String? = null, p2Name: String? = null): Boolean {
         val data = CorrespondenceManager.decodeTurn(code) ?: return false
+        loadedTurnData = data
         _settings.value = _settings.value.copy(matchMode = MatchMode.CORRESPONDENCE)
         _currentRound.value = data.roundNumber
         _currentTurnNumber.value = data.turnNumber
         terrainSeed = data.seed
         terrain.generate(seed = data.seed, style = TerrainStyle.HILLS)
 
-        // Apply saved craters
+        val resolvedP1Name = p1Name?.ifBlank { null } ?: _tanks.value.getOrNull(0)?.name ?: "Player 1"
+        val resolvedP2Name = p2Name?.ifBlank { null } ?: _tanks.value.getOrNull(1)?.name ?: "Player 2"
+
+        // Check if there are last player's actions to replay prior to current player taking actions
+        val canReplay = data.lastFiredPlayerId in 0..1 && data.lastWeaponName.isNotBlank() && data.turnNumber > 1
+
+        if (canReplay) {
+            startReplay(data, resolvedP1Name, resolvedP2Name)
+        } else {
+            finishReplayImmediate(data, resolvedP1Name, resolvedP2Name)
+        }
+        return true
+    }
+
+    private fun startReplay(data: CorrespondenceTurnData, resolvedP1Name: String, resolvedP2Name: String) {
+        replayJob?.cancel()
+        simJob?.cancel()
+        _projectiles.value = emptyList()
+        _particles.value = emptyList()
+
+        // Apply craters prior to the last shot
         recordedCraters.clear()
-        for (c in data.craters) {
+        val prevCraters = data.craters.take(data.prevCraterCount.coerceIn(0, data.craters.size))
+        for (c in prevCraters) {
             recordedCraters.add(c)
             if (c.isDirt) {
                 terrain.addDirt(c.cx, c.cy, c.radius)
@@ -1099,9 +1162,263 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Reconstruct tanks with custom player names
-        val resolvedP1Name = p1Name?.ifBlank { null } ?: _tanks.value.getOrNull(0)?.name ?: "Player 1"
-        val resolvedP2Name = p2Name?.ifBlank { null } ?: _tanks.value.getOrNull(1)?.name ?: "Player 2"
+        val shooterId = data.lastFiredPlayerId
+        val weapon = WeaponType.values().find { it.name == data.lastWeaponName } ?: WeaponType.BABY_MISSILE
+
+        val p1 = Tank(
+            id = 0,
+            name = resolvedP1Name,
+            isHuman = true,
+            color = Color(0xFF00E5FF),
+            x = data.p1X,
+            y = terrain.getHeightAt(data.p1X),
+            aimAngle = if (shooterId == 0) data.lastFiredAngle else 45f,
+            aimPower = if (shooterId == 0) data.lastFiredPower else 55f,
+            selectedWeapon = if (shooterId == 0) weapon else WeaponType.BABY_MISSILE,
+            health = data.prevP1Health,
+            shield = data.prevP1Shield,
+            cash = data.p1Cash
+        )
+        val p2 = Tank(
+            id = 1,
+            name = resolvedP2Name,
+            isHuman = true,
+            color = Color(0xFFFF5252),
+            x = data.p2X,
+            y = terrain.getHeightAt(data.p2X),
+            aimAngle = if (shooterId == 1) data.lastFiredAngle else 135f,
+            aimPower = if (shooterId == 1) data.lastFiredPower else 55f,
+            selectedWeapon = if (shooterId == 1) weapon else WeaponType.BABY_MISSILE,
+            health = data.prevP2Health,
+            shield = data.prevP2Shield,
+            cash = data.p2Cash
+        )
+        _tanks.value = listOf(p1, p2)
+        _activeTankIndex.value = shooterId
+        _windSpeed.value = data.lastFiredWindSpeed
+
+        // Reconstruct crates
+        _powerUpCrates.value = data.crates.mapIndexed { idx, cr ->
+            PowerUpCrate(
+                id = idx.toLong() + 100,
+                type = cr.type,
+                x = cr.x,
+                y = terrain.getHeightAt(cr.x) - 14f,
+                isParachuting = !cr.isGrounded,
+                isGrounded = cr.isGrounded
+            )
+        }
+
+        val shooterName = if (shooterId == 0) resolvedP1Name else resolvedP2Name
+        val targetName = if (shooterId == 0) resolvedP2Name else resolvedP1Name
+
+        _replayState.value = ReplayBannerState(
+            shooterName = shooterName,
+            targetName = targetName,
+            weaponName = weapon.displayName,
+            angle = data.lastFiredAngle,
+            power = data.lastFiredPower,
+            turnNumber = data.turnNumber - 1
+        )
+        _screenState.value = GameScreenState.REPLAYING
+
+        replayJob = viewModelScope.launch {
+            delay(900) // Brief moment for player to see the replay banner & shooter aim
+            if (_screenState.value != GameScreenState.REPLAYING) return@launch
+
+            val shooter = _tanks.value.getOrNull(shooterId) ?: return@launch
+            val rad = shooter.aimAngle * (PI.toFloat() / 180f)
+            val speedMult = 6.2f * weapon.speedMultiplier
+            val barrelLen = 22f
+            val startX = shooter.x + cos(rad) * barrelLen
+            val startY = shooter.y - 12f - sin(rad) * barrelLen
+            val burst = weapon.burstCount
+
+            addFloatingText(
+                "REPLAY: $shooterName FIRED ${weapon.displayName.uppercase()}!",
+                shooter.x, shooter.y - 35f, shooter.color
+            )
+
+            for (b in 0 until burst) {
+                if (b > 0) delay(110)
+                audio.playFireSound()
+                val spreadAngle = shooter.aimAngle + (b - (burst - 1) / 2f) * 1.5f
+                val spreadRad = spreadAngle * (PI.toFloat() / 180f)
+                val velocity = shooter.aimPower * speedMult
+                val proj = Projectile(
+                    id = nextProjId++,
+                    ownerId = shooter.id,
+                    weaponType = weapon,
+                    x = startX,
+                    y = startY,
+                    vx = cos(spreadRad) * velocity,
+                    vy = -sin(spreadRad) * velocity,
+                    bouncesLeft = if (weapon == WeaponType.BOUNCER) 3 else 0
+                )
+                _projectiles.value = _projectiles.value + proj
+            }
+
+            startReplaySimulationLoop(data)
+        }
+    }
+
+    private fun startReplaySimulationLoop(data: CorrespondenceTurnData) {
+        simJob?.cancel()
+        simJob = viewModelScope.launch {
+            val dt = 0.025f
+            while (isActive) {
+                var hasActiveObjects = false
+
+                val updatedCrates = _powerUpCrates.value.map { crate ->
+                    ballistics.stepCrate(crate, dt, _windSpeed.value, terrain)
+                }
+                _powerUpCrates.value = updatedCrates
+
+                val curProjs = _projectiles.value
+                if (curProjs.isNotEmpty()) {
+                    hasActiveObjects = true
+                    val nextProjs = mutableListOf<Projectile>()
+                    val spawnedFromSplits = mutableListOf<Projectile>()
+                    for (p in curProjs) {
+                        val stepped = ballistics.stepProjectile(
+                            proj = p,
+                            dt = dt,
+                            windSpeed = _windSpeed.value,
+                            terrain = terrain,
+                            onDetonate = { detonatedProj, dx, dy ->
+                                handleDetonation(detonatedProj, dx, dy)
+                            },
+                            onSplitMirv = { mirvProj ->
+                                val subs = handleMirvSplit(mirvProj)
+                                spawnedFromSplits.addAll(subs)
+                            }
+                        )
+                        if (stepped != null) {
+                            nextProjs.add(stepped)
+                        }
+                    }
+                    nextProjs.addAll(spawnedFromSplits)
+                    _projectiles.value = nextProjs
+                }
+
+                val curParticles = _particles.value
+                if (curParticles.isNotEmpty()) {
+                    hasActiveObjects = true
+                    val nextParticles = curParticles.mapNotNull { part ->
+                        val life = part.currentLife - dt
+                        if (life <= 0f) null
+                        else part.copy(
+                            x = part.x + part.vx * dt,
+                            y = part.y + part.vy * dt,
+                            currentLife = life
+                        )
+                    }
+                    _particles.value = nextParticles
+                }
+
+                val curTexts = _floatingTexts.value
+                if (curTexts.isNotEmpty()) {
+                    val nextTexts = curTexts.mapNotNull { ft ->
+                        val life = ft.currentLife - dt
+                        if (life <= 0f) null
+                        else ft.copy(y = ft.y - 18f * dt, currentLife = life)
+                    }
+                    _floatingTexts.value = nextTexts
+                }
+
+                settleTanks()
+
+                if (!hasActiveObjects && _projectiles.value.isEmpty()) {
+                    // Replay simulation complete
+                    delay(900)
+                    finishReplay(data)
+                    break
+                }
+
+                delay(25)
+            }
+        }
+    }
+
+    fun finishReplay(data: CorrespondenceTurnData? = loadedTurnData) {
+        replayJob?.cancel()
+        simJob?.cancel()
+        _projectiles.value = emptyList()
+        _particles.value = emptyList()
+        _replayState.value = null
+
+        val targetData = data ?: loadedTurnData ?: return
+
+        // Restore complete craters state
+        recordedCraters.clear()
+        for (c in targetData.craters) {
+            recordedCraters.add(c)
+            if (c.isDirt) terrain.addDirt(c.cx, c.cy, c.radius)
+            else terrain.carveCrater(c.cx, c.cy, c.radius)
+        }
+
+        // Apply final tank states
+        val list = _tanks.value.toMutableList()
+        val p1 = list.getOrNull(0)
+        val p2 = list.getOrNull(1)
+        if (p1 != null) {
+            list[0] = p1.copy(
+                x = targetData.p1X,
+                y = terrain.getHeightAt(targetData.p1X),
+                health = targetData.p1Health,
+                shield = targetData.p1Shield,
+                cash = targetData.p1Cash,
+                isDestroyed = targetData.p1Health <= 0
+            )
+        }
+        if (p2 != null) {
+            list[1] = p2.copy(
+                x = targetData.p2X,
+                y = terrain.getHeightAt(targetData.p2X),
+                health = targetData.p2Health,
+                shield = targetData.p2Shield,
+                cash = targetData.p2Cash,
+                isDestroyed = targetData.p2Health <= 0
+            )
+        }
+        _tanks.value = list
+        settleTanks()
+
+        _windSpeed.value = targetData.windSpeed
+        _currentTurnNumber.value = targetData.turnNumber
+        _currentRound.value = targetData.roundNumber
+        _activeTankIndex.value = targetData.activeTankIndex
+
+        val isOver = targetData.isGameOver || (p1?.health ?: 100) <= 0 || (p2?.health ?: 100) <= 0
+        if (isOver) {
+            val winner = if (targetData.winnerName.isNotBlank()) {
+                list.firstOrNull { it.name.equals(targetData.winnerName, ignoreCase = true) }
+            } else {
+                list.firstOrNull { it.health > 0 }
+            }
+            _roundWinner.value = winner
+            _matchWinner.value = winner
+            _screenState.value = GameScreenState.MATCH_OVER
+        } else {
+            _screenState.value = GameScreenState.PLAYING
+            updateTrajectoryGuide()
+            val nextPlayerName = list.getOrNull(targetData.activeTankIndex)?.name ?: "Player ${targetData.activeTankIndex + 1}"
+            addFloatingText("YOUR TURN, $nextPlayerName!", 500f, 90f, Color(0xFF10B981))
+            audio.playPowerUpSound()
+        }
+    }
+
+    fun skipReplay() {
+        finishReplay(loadedTurnData)
+    }
+
+    private fun finishReplayImmediate(data: CorrespondenceTurnData, resolvedP1Name: String, resolvedP2Name: String) {
+        recordedCraters.clear()
+        for (c in data.craters) {
+            recordedCraters.add(c)
+            if (c.isDirt) terrain.addDirt(c.cx, c.cy, c.radius)
+            else terrain.carveCrater(c.cx, c.cy, c.radius)
+        }
 
         val p1 = Tank(
             id = 0,
@@ -1129,7 +1446,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _windSpeed.value = data.windSpeed
         _activeTankIndex.value = data.activeTankIndex
 
-        // Reconstruct crates
         _powerUpCrates.value = data.crates.mapIndexed { idx, cr ->
             PowerUpCrate(
                 id = idx.toLong() + 100,
@@ -1141,10 +1457,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
-        _screenState.value = GameScreenState.PLAYING
-        updateTrajectoryGuide()
-        addFloatingText("TURN #${data.turnNumber} LOADED!", 500f, 100f, Color(0xFF00E5FF))
-        return true
+        val isOver = data.isGameOver || (p1.health <= 0 || p2.health <= 0)
+        if (isOver) {
+            val winner = if (data.winnerName.isNotBlank()) {
+                listOf(p1, p2).firstOrNull { it.name.equals(data.winnerName, ignoreCase = true) }
+            } else {
+                listOf(p1, p2).firstOrNull { it.health > 0 }
+            }
+            _roundWinner.value = winner
+            _matchWinner.value = winner
+            _screenState.value = GameScreenState.MATCH_OVER
+        } else {
+            _screenState.value = GameScreenState.PLAYING
+            updateTrajectoryGuide()
+            addFloatingText("TURN #${data.turnNumber} LOADED!", 500f, 100f, Color(0xFF00E5FF))
+        }
     }
 
     /**

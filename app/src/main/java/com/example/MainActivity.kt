@@ -1,5 +1,9 @@
 package com.example
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -10,14 +14,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.GameScreen
 import com.example.ui.MainMenuScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.GameScreenState
 import com.example.viewmodel.GameViewModel
+
+tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 class MainActivity : ComponentActivity() {
     private val viewModel: GameViewModel by viewModels()
@@ -43,8 +55,24 @@ fun ScorchedTanksApp(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val screenState by viewModel.screenState.collectAsState()
     val settings by viewModel.settings.collectAsState()
+
+    // Force landscape mode when in game, restore auto/unspecified orientation at main menu
+    DisposableEffect(screenState) {
+        val activity = context.findActivity()
+        if (activity != null) {
+            if (screenState != GameScreenState.MENU) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            } else {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
 
     if (screenState == GameScreenState.MENU) {
         MainMenuScreen(

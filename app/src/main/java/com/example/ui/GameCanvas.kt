@@ -242,111 +242,112 @@ private fun DrawScope.drawTank(tank: Tank, isActive: Boolean, scaleX: Float, sca
     val cx = tank.x * scaleX
     val cy = tank.y * scaleY
 
-    // 1. Force Shield bubble
+    // 1. Force Shield bubble (scaled 10% bigger)
     if (tank.isShieldActive) {
         val pulse = (sin(System.currentTimeMillis() * 0.008) * 3f).toFloat()
-        val shieldR = 34f + pulse
+        val shieldR = 37.5f + pulse
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(Color(0x3300E5FF), Color(0x6600E5FF), Color(0xCC00E5FF)),
-                center = Offset(cx, cy - 12f),
+                center = Offset(cx, cy - 13.5f),
                 radius = shieldR
             ),
             radius = shieldR,
-            center = Offset(cx, cy - 12f)
+            center = Offset(cx, cy - 13.5f)
         )
         drawCircle(
             color = Color(0xFF00E5FF),
             radius = shieldR,
-            center = Offset(cx, cy - 12f),
+            center = Offset(cx, cy - 13.5f),
             style = Stroke(width = 2f)
         )
     }
 
-    // 2. Double Damage Fiery Aura
+    // 2. Double Damage Fiery Aura (scaled 10% bigger)
     if (tank.hasDoubleDamage) {
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(Color(0x55FF1744), Color(0x00FF1744)),
-                center = Offset(cx, cy - 14f),
-                radius = 42f
+                center = Offset(cx, cy - 15.5f),
+                radius = 46f
             ),
-            radius = 42f,
-            center = Offset(cx, cy - 14f)
+            radius = 46f,
+            center = Offset(cx, cy - 15.5f)
         )
     }
 
-    // Tank body tilted according to ground slope
+    // Tank body tilted according to ground slope (10% bigger chassis and treads)
     rotate(degrees = tank.tiltAngle, pivot = Offset(cx, cy)) {
-        // Treads (black rounded box)
+        // Treads (black rounded box, +10% bigger: 41.8 x 11)
         drawRoundRect(
             color = Color(0xFF18181B),
-            topLeft = Offset(cx - 19f, cy - 7f),
-            size = Size(38f, 10f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f)
+            topLeft = Offset(cx - 20.9f, cy - 7.7f),
+            size = Size(41.8f, 11f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.4f, 4.4f)
         )
-        // Road wheels
-        for (w in listOf(-12f, -4f, 4f, 12f)) {
-            drawCircle(color = Color(0xFF52525B), radius = 3.5f, center = Offset(cx + w, cy - 2f))
+        // Road wheels (+10% bigger)
+        for (w in listOf(-13.2f, -4.4f, 4.4f, 13.2f)) {
+            drawCircle(color = Color(0xFF52525B), radius = 3.85f, center = Offset(cx + w, cy - 2.2f))
         }
 
-        // Main Hull Chassis (Player colored armor)
+        // Main Hull Chassis (+10% bigger: 33 x 10)
         drawRoundRect(
             color = tank.color,
-            topLeft = Offset(cx - 15f, cy - 15f),
-            size = Size(30f, 9f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5f, 2.5f)
+            topLeft = Offset(cx - 16.5f, cy - 16.5f),
+            size = Size(33f, 10f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.75f, 2.75f)
         )
 
-        // Turret Dome
+        // Turret Dome (+10% bigger)
         drawCircle(
             color = tank.color.copy(alpha = 0.9f),
-            radius = 7f,
-            center = Offset(cx, cy - 15f)
+            radius = 7.7f,
+            center = Offset(cx, cy - 16.5f)
         )
     }
 
-    // Cannon Barrel rotated to aimAngle (unaffected by tank chassis tilt, pure ballistic aiming!)
+    // Cannon Barrel rotated to aimAngle (+10% bigger barrel: len 24.2)
     val barrelRad = tank.aimAngle * (PI.toFloat() / 180f)
-    val barrelLen = 22f
-    val turretCenter = Offset(cx, cy - 15f)
+    val barrelLen = 24.2f
+    val turretCenter = Offset(cx, cy - 16.5f)
     val barrelEnd = Offset(
         cx + cos(barrelRad) * barrelLen,
-        cy - 15f - sin(barrelRad) * barrelLen
+        cy - 16.5f - sin(barrelRad) * barrelLen
     )
     drawLine(
         color = if (tank.hasDoubleDamage) Color(0xFFFF1744) else Color(0xFFE4E4E7),
         start = turretCenter,
         end = barrelEnd,
-        strokeWidth = if (tank.hasDoubleDamage) 5f else 4f,
+        strokeWidth = if (tank.hasDoubleDamage) 5.5f else 4.4f,
         cap = StrokeCap.Round
     )
 
-    // Player Overhead HUD (Health bar, Shield bar, Name, Active Turn indicator)
-    val hudY = cy - 36f
+    // Player Overhead HUD (Health bar, Shield bar, Name, Active Turn indicator, +10% larger)
+    val hudY = cy - 40f
 
     // Active arrow beacon
     if (isActive) {
         val bounce = (sin(System.currentTimeMillis() * 0.01) * 4f).toFloat()
-        val arrowY = hudY - 14f + bounce
+        val arrowY = hudY - 15f + bounce
         val arrowPath = Path().apply {
-            moveTo(cx, arrowY + 6f)
-            lineTo(cx - 5f, arrowY)
-            lineTo(cx + 5f, arrowY)
+            moveTo(cx, arrowY + 7f)
+            lineTo(cx - 6f, arrowY)
+            lineTo(cx + 6f, arrowY)
             close()
         }
-        drawPath(arrowPath, color = tank.color)
+        val beaconColor = if (!tank.isHuman) Color(0xFFFF5252) else tank.color
+        drawPath(arrowPath, color = beaconColor)
     }
 
-    // Health Bar Background
-    val barWidth = 44f
-    val barHeight = 5f
+    // Health Bar Background (+10% bigger: 48.4 x 5.5)
+    val barWidth = 48.4f
+    val barHeight = 5.5f
     val barX = cx - barWidth / 2f
     drawRoundRect(
         color = Color(0xFF27272A),
         topLeft = Offset(barX, hudY),
         size = Size(barWidth, barHeight),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f)
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.2f, 2.2f)
     )
     // Health Bar Fill
     val hpFrac = (tank.health / 100f).coerceIn(0f, 1f)
@@ -359,7 +360,7 @@ private fun DrawScope.drawTank(tank: Tank, isActive: Boolean, scaleX: Float, sca
         color = hpColor,
         topLeft = Offset(barX, hudY),
         size = Size(barWidth * hpFrac, barHeight),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f)
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.2f, 2.2f)
     )
 
     // Shield Bar (thin blue bar over health)

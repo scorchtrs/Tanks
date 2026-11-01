@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ fun GameScreen(
     viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -57,6 +59,9 @@ fun GameScreen(
     val tanks by viewModel.tanks.collectAsState()
     val activeIdx by viewModel.activeTankIndex.collectAsState()
     val currentRound by viewModel.currentRound.collectAsState()
+    val currentTurnNumber by viewModel.currentTurnNumber.collectAsState()
+    val localPlayerIndex by viewModel.localPlayerIndex.collectAsState()
+    val currentMatchId by viewModel.currentMatchId.collectAsState()
     val roundScores by viewModel.roundScores.collectAsState()
     val windSpeed by viewModel.windSpeed.collectAsState()
     val powerUpCrates by viewModel.powerUpCrates.collectAsState()
@@ -70,6 +75,7 @@ fun GameScreen(
     val settings by viewModel.settings.collectAsState()
 
     var isMuted by remember { mutableStateOf(viewModel.audio.isMuted) }
+    var isCheckingRemote by remember { mutableStateOf(false) }
 
     val activeTank = tanks.getOrNull(activeIdx)
 
@@ -290,6 +296,38 @@ fun GameScreen(
                 }
             }
 
+            // Dedicated Turn Indicator: Shows whose move it is, distinguishing Player vs AI and handling Correspondence play
+            if (activeTank != null) {
+                TurnIndicator(
+                    activeTank = activeTank,
+                    matchMode = settings.matchMode,
+                    currentMatchId = currentMatchId,
+                    turnNumber = currentTurnNumber,
+                    currentRound = currentRound,
+                    totalRounds = settings.roundsCount,
+                    isFiring = screenState == GameScreenState.FIRING,
+                    localPlayerIndex = localPlayerIndex,
+                    isCheckingRemote = isCheckingRemote,
+                    onCheckRemoteTurn = {
+                        isCheckingRemote = true
+                        viewModel.syncCorrespondenceRemote(context) { success, msg ->
+                            isCheckingRemote = false
+                            viewModel.addFloatingText(msg, 500f, 100f, if (success) Color(0xFF10B981) else Color(0xFFEF4444))
+                        }
+                    },
+                    onSwitchRole = {
+                        val nextRole = (localPlayerIndex + 1) % 2
+                        viewModel.setLocalPlayerIndex(nextRole)
+                        viewModel.addFloatingText("Role set to Player ${nextRole + 1}", 500f, 120f, Color(0xFF38BDF8))
+                    },
+                    onRenamePlayer = { tankId, newName ->
+                        viewModel.setTankName(tankId, newName, context)
+                        viewModel.addFloatingText("Commander renamed to $newName!", 500f, 120f, Color(0xFF10B981))
+                    },
+                    isLandscape = isLandscape
+                )
+            }
+
             // Battlefield Canvas in center (expanding to take up available vertical space)
             Box(
                 modifier = Modifier
@@ -364,8 +402,15 @@ fun GameScreen(
                 )
             }
             GameScreenState.CORRESPONDENCE_SHARE -> {
+                val p1 = tanks.getOrNull(0)?.name ?: "Player 1"
+                val p2 = tanks.getOrNull(1)?.name ?: "Player 2"
                 CorrespondenceShareDialog(
                     turnCode = lastTurnCode,
+                    matchId = currentMatchId,
+                    isGameOver = matchWinner != null,
+                    winnerName = matchWinner?.name ?: "",
+                    p1Name = p1,
+                    p2Name = p2,
                     onContinue = { viewModel.continueAfterShare() }
                 )
             }

@@ -9,6 +9,7 @@ import com.example.ai.ArtilleryAi
 import com.example.audio.RetroAudioPlayer
 import com.example.correspondence.CorrespondenceManager
 import com.example.correspondence.CorrespondenceTurnData
+import com.example.correspondence.MariaDbManager
 import com.example.correspondence.CraterRecord
 import com.example.correspondence.CrateRecord
 import com.example.model.ActiveBuff
@@ -104,6 +105,18 @@ class GameViewModel : ViewModel() {
     private val _lastTurnCode = MutableStateFlow("")
     val lastTurnCode: StateFlow<String> = _lastTurnCode.asStateFlow()
 
+    val currentMatchId = MutableStateFlow("EARTH-GAME-1")
+
+    private val _currentTurnNumber = MutableStateFlow(1)
+    val currentTurnNumber: StateFlow<Int> = _currentTurnNumber.asStateFlow()
+
+    private val _localPlayerIndex = MutableStateFlow(0)
+    val localPlayerIndex: StateFlow<Int> = _localPlayerIndex.asStateFlow()
+
+    fun setLocalPlayerIndex(idx: Int) {
+        _localPlayerIndex.value = idx.coerceIn(0, 1)
+    }
+
     private val recordedCraters = mutableListOf<CraterRecord>()
     private var lastFiredData: CorrespondenceTurnData? = null
     private var simJob: Job? = null
@@ -125,6 +138,7 @@ class GameViewModel : ViewModel() {
 
     fun startMatch() {
         _currentRound.value = 1
+        _currentTurnNumber.value = 1
         _roundScores.value = mapOf(0 to 0, 1 to 0)
         _roundWinner.value = null
         _matchWinner.value = null
@@ -715,7 +729,13 @@ class GameViewModel : ViewModel() {
             val maxScore = _roundScores.value.values.maxOrNull() ?: 0
             if (maxScore >= targetWins || _currentRound.value >= _settings.value.roundsCount) {
                 _matchWinner.value = winner
-                _screenState.value = GameScreenState.MATCH_OVER
+                if (_settings.value.matchMode == MatchMode.CORRESPONDENCE && lastFiredData != null) {
+                    val code = CorrespondenceManager.encodeTurn(lastFiredData!!)
+                    _lastTurnCode.value = code
+                    _screenState.value = GameScreenState.CORRESPONDENCE_SHARE
+                } else {
+                    _screenState.value = GameScreenState.MATCH_OVER
+                }
             } else {
                 _screenState.value = GameScreenState.ROUND_OVER
             }
@@ -738,6 +758,7 @@ class GameViewModel : ViewModel() {
         // Switch active tank
         val nextIdx = (currentIdx + 1) % _tanks.value.size
         _activeTankIndex.value = nextIdx
+        _currentTurnNumber.value = _currentTurnNumber.value + 1
 
         // Dynamic wind shift
         rollWind()
@@ -927,13 +948,43 @@ class GameViewModel : ViewModel() {
         updateTrajectoryGuide()
     }
 
+    fun setTankName(tankIndex: Int, newName: String, context: Context? = null) {
+        if (newName.isBlank()) return
+        val list = _tanks.value.toMutableList()
+        val tank = list.getOrNull(tankIndex) ?: return
+        list[tankIndex] = tank.copy(name = newName.trim())
+        _tanks.value = list
+
+        if (context != null && _settings.value.matchMode == MatchMode.CORRESPONDENCE) {
+            val p1 = list.getOrNull(0)?.name ?: "Player 1"
+            val p2 = list.getOrNull(1)?.name ?: "Player 2"
+            viewModelScope.launch {
+                MariaDbManager.updateMatchPlayerNames(context, currentMatchId.value, p1, p2)
+            }
+        }
+    }
+
+    fun startCorrespondenceSlot(slotNumber: Int, matchId: String, p1Name: String? = null, p2Name: String? = null) {
+        currentMatchId.value = matchId
+        _settings.value = _settings.value.copy(matchMode = MatchMode.CORRESPONDENCE)
+        startMatch()
+        if (!p1Name.isNullOrBlank()) setTankName(0, p1Name)
+        if (!p2Name.isNullOrBlank()) setTankName(1, p2Name)
+    }
+
+    fun loadCorrespondenceSlot(slotNumber: Int, matchId: String, turnCode: String, p1Name: String? = null, p2Name: String? = null): Boolean {
+        currentMatchId.value = matchId
+        return loadCorrespondenceTurn(turnCode, p1Name, p2Name)
+    }
+
     /**
      * Load correspondence turn code from clipboard or input.
      */
-    fun loadCorrespondenceTurn(code: String): Boolean {
+    fun loadCorrespondenceTurn(code: String, p1Name: String? = null, p2Name: String? = null): Boolean {
         val data = CorrespondenceManager.decodeTurn(code) ?: return false
         _settings.value = _settings.value.copy(matchMode = MatchMode.CORRESPONDENCE)
         _currentRound.value = data.roundNumber
+        _currentTurnNumber.value = data.turnNumber
         terrainSeed = data.seed
         terrain.generate(seed = data.seed, style = TerrainStyle.HILLS)
 
@@ -948,10 +999,13 @@ class GameViewModel : ViewModel() {
             }
         }
 
-        // Reconstruct tanks
+        // Reconstruct tanks with custom player names
+        val resolvedP1Name = p1Name?.ifBlank { null } ?: _tanks.value.getOrNull(0)?.name ?: "Player 1"
+        val resolvedP2Name = p2Name?.ifBlank { null } ?: _tanks.value.getOrNull(1)?.name ?: "Player 2"
+
         val p1 = Tank(
             id = 0,
-            name = "Player 1",
+            name = resolvedP1Name,
             isHuman = true,
             color = Color(0xFF00E5FF),
             x = data.p1X,
@@ -962,7 +1016,7 @@ class GameViewModel : ViewModel() {
         )
         val p2 = Tank(
             id = 1,
-            name = "Player 2",
+            name = resolvedP2Name,
             isHuman = true,
             color = Color(0xFFFF5252),
             x = data.p2X,
@@ -991,5 +1045,36 @@ class GameViewModel : ViewModel() {
         updateTrajectoryGuide()
         addFloatingText("TURN #${data.turnNumber} LOADED!", 500f, 100f, Color(0xFF00E5FF))
         return true
+    }
+
+    /**
+     * Checks the remote MariaDB server for the latest turn in correspondence play.
+     */
+    fun syncCorrespondenceRemote(context: Context, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val matchId = currentMatchId.value
+            val res = MariaDbManager.fetchLatestTurn(context, matchId)
+            res.fold(
+                onSuccess = { turnResult ->
+                    if (turnResult != null) {
+                        val turnData = turnResult.turnData
+                        if (turnData.turnNumber > _currentTurnNumber.value || 
+                            (turnData.turnNumber == _currentTurnNumber.value && turnData.activeTankIndex != _activeTankIndex.value)) {
+                            loadCorrespondenceTurn(turnResult.turnCode, turnResult.p1Name, turnResult.p2Name)
+                            onResult(true, "Turn #${turnData.turnNumber} synced from server (${turnResult.p1Name} vs ${turnResult.p2Name})!")
+                        } else {
+                            if (turnResult.p1Name.isNotBlank()) setTankName(0, turnResult.p1Name)
+                            if (turnResult.p2Name.isNotBlank()) setTankName(1, turnResult.p2Name)
+                            onResult(false, "You are already on the latest turn (#${_currentTurnNumber.value}).")
+                        }
+                    } else {
+                        onResult(false, "No saved turns found for $matchId yet.")
+                    }
+                },
+                onFailure = { err ->
+                    onResult(false, "Sync failed: ${err.message ?: "Network error"}")
+                }
+            )
+        }
     }
 }

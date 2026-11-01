@@ -56,6 +56,13 @@ fun ScorchedTanksApp(
             onLoadCorrespondenceCode = { code ->
                 viewModel.loadCorrespondenceTurn(code)
             },
+            onPlaySlot = { slotNumber, matchId, turnCode, p1Name, p2Name ->
+                if (turnCode != null) {
+                    viewModel.loadCorrespondenceSlot(slotNumber, matchId, turnCode, p1Name, p2Name)
+                } else {
+                    viewModel.startCorrespondenceSlot(slotNumber, matchId, p1Name, p2Name)
+                }
+            },
             modifier = modifier
         )
     } else {

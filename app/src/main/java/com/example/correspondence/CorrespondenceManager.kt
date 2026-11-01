@@ -32,7 +32,9 @@ data class CorrespondenceTurnData(
     // Ground modifications (crater list cx, cy, radius, isAddDirt)
     val craters: List<CraterRecord> = emptyList(),
     // Active crates (type, x, isGrounded)
-    val crates: List<CrateRecord> = emptyList()
+    val crates: List<CrateRecord> = emptyList(),
+    val isGameOver: Boolean = false,
+    val winnerName: String = ""
 )
 
 data class CraterRecord(val cx: Float, val cy: Float, val radius: Float, val isDirt: Boolean)
@@ -150,6 +152,8 @@ object CorrespondenceManager {
             cratesArr.put(crj)
         }
         json.put("crates", cratesArr)
+        json.put("over", data.isGameOver)
+        json.put("win", data.winnerName)
 
         val rawBytes = json.toString().toByteArray(Charsets.UTF_8)
         val base64 = SimpleBase64.encode(rawBytes)
@@ -213,6 +217,9 @@ object CorrespondenceManager {
                 }
             }
 
+            val isOver = json.optBoolean("over", false) || (p1.optInt("hp", 100) <= 0 || p2.optInt("hp", 100) <= 0)
+            val winnerName = json.optString("win", "")
+
             return CorrespondenceTurnData(
                 turnNumber = json.optInt("turn", 1),
                 roundNumber = json.optInt("rnd", 1),
@@ -232,7 +239,9 @@ object CorrespondenceManager {
                 lastFiredPower = lastPower,
                 lastWeaponName = lastWeapon,
                 craters = cratersList,
-                crates = cratesList
+                crates = cratesList,
+                isGameOver = isOver,
+                winnerName = winnerName
             )
         } catch (e: Exception) {
             return null

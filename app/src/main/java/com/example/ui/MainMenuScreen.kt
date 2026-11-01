@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,6 +61,7 @@ fun MainMenuScreen(
     currentSettings: GameSettings,
     onStartGame: (GameSettings) -> Unit,
     onLoadCorrespondenceCode: (String) -> Boolean,
+    onPlaySlot: (slotNumber: Int, matchId: String, turnCode: String?, p1Name: String?, p2Name: String?) -> Unit = { _, _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -69,6 +72,7 @@ fun MainMenuScreen(
     var selectedRounds by remember { mutableStateOf(currentSettings.roundsCount) }
     var selectedWind by remember { mutableStateOf(currentSettings.windMode) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showMariaDbSettings by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -184,13 +188,90 @@ fun MainMenuScreen(
                         }
                     }
 
-                    // Right Column: Match Configuration + Start Button
+                    // Right Column: Match Configuration + Start Button OR Correspondence 5 Slots Panel
                     Column(
                         modifier = Modifier.weight(1f),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // AI Difficulty (if VS_AI)
-                        if (selectedMode == MatchMode.VS_AI) {
+                        if (selectedMode == MatchMode.CORRESPONDENCE) {
+                            CorrespondenceGamesPanel(
+                                onPlaySlot = onPlaySlot,
+                                onOpenSettings = { showMariaDbSettings = true }
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    val newSettings = GameSettings(
+                                        roundsCount = selectedRounds,
+                                        matchMode = selectedMode,
+                                        aiDifficulty = selectedDifficulty,
+                                        windMode = selectedWind
+                                    )
+                                    onStartGame(newSettings)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(46.dp)
+                                    .testTag("start_quick_correspondence_button"),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "START NEW QUICK CORRESPONDENCE",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        } else {
+                            // AI Difficulty (if VS_AI)
+                            if (selectedMode == MatchMode.VS_AI) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(
+                                            text = "AI DIFFICULTY",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF38BDF8),
+                                            letterSpacing = 1.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            AiDifficulty.values().forEach { diff ->
+                                                val isSel = selectedDifficulty == diff
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B))
+                                                        .clickable { selectedDifficulty = diff }
+                                                        .padding(vertical = 6.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = diff.name,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSel) Color.White else Color(0xFF94A3B8)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                            }
+
+                            // Wind Dynamics Card
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(16.dp),
@@ -199,30 +280,65 @@ fun MainMenuScreen(
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text(
-                                        text = "AI DIFFICULTY",
+                                        text = "WIND DYNAMICS",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF38BDF8),
                                         letterSpacing = 1.sp
                                     )
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        AiDifficulty.values().forEach { diff ->
-                                            val isSel = selectedDifficulty == diff
+                                        WindMode.values().forEach { wm ->
+                                            val isSel = selectedWind == wm
                                             Box(
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .clip(RoundedCornerShape(8.dp))
                                                     .background(if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B))
-                                                    .clickable { selectedDifficulty = diff }
+                                                    .clickable { selectedWind = wm }
                                                     .padding(vertical = 6.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    text = diff.name,
+                                                    text = wm.displayName,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSel) Color.White else Color(0xFF94A3B8)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Text(
+                                        text = "MATCH ROUNDS",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF38BDF8),
+                                        letterSpacing = 1.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(1, 3, 5, 10).forEach { rnd ->
+                                            val isSel = selectedRounds == rnd
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B))
+                                                    .clickable { selectedRounds = rnd }
+                                                    .padding(vertical = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "$rnd",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (isSel) Color.White else Color(0xFF94A3B8)
@@ -232,117 +348,38 @@ fun MainMenuScreen(
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
 
-                        // Wind Dynamics Card
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2E)),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Start Battle Button
+                            Button(
+                                onClick = {
+                                    val newSettings = GameSettings(
+                                        roundsCount = selectedRounds,
+                                        matchMode = selectedMode,
+                                        aiDifficulty = selectedDifficulty,
+                                        windMode = selectedWind
+                                    )
+                                    onStartGame(newSettings)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp)
+                                    .testTag("start_battle_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF22C55E)
+                                )
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "WIND DYNAMICS",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF38BDF8),
+                                    text = "START BATTLE",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 14.sp,
                                     letterSpacing = 1.sp
                                 )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    WindMode.values().forEach { wm ->
-                                        val isSel = selectedWind == wm
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B))
-                                                .clickable { selectedWind = wm }
-                                                .padding(vertical = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = wm.displayName,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSel) Color.White else Color(0xFF94A3B8)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                Text(
-                                    text = "MATCH ROUNDS",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF38BDF8),
-                                    letterSpacing = 1.sp
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    listOf(1, 3, 5, 10).forEach { rnd ->
-                                        val isSel = selectedRounds == rnd
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B))
-                                                .clickable { selectedRounds = rnd }
-                                                .padding(vertical = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "$rnd",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSel) Color.White else Color(0xFF94A3B8)
-                                            )
-                                        }
-                                    }
-                                }
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Start Battle Button
-                        Button(
-                            onClick = {
-                                val newSettings = GameSettings(
-                                    roundsCount = selectedRounds,
-                                    matchMode = selectedMode,
-                                    aiDifficulty = selectedDifficulty,
-                                    windMode = selectedWind
-                                )
-                                onStartGame(newSettings)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag("start_battle_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF22C55E)
-                            )
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "START BATTLE",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 14.sp,
-                                letterSpacing = 1.sp
-                            )
                         }
                     }
                 }
@@ -429,6 +466,15 @@ fun MainMenuScreen(
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
+
+                    // 5 Independent Correspondence Slots Panel (accessible in Correspondence Mode)
+                    if (selectedMode == MatchMode.CORRESPONDENCE) {
+                        CorrespondenceGamesPanel(
+                            onPlaySlot = onPlaySlot,
+                            onOpenSettings = { showMariaDbSettings = true }
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
 
                     // AI Difficulty (if VS_AI)
                     if (selectedMode == MatchMode.VS_AI) {
@@ -588,6 +634,27 @@ fun MainMenuScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    if (selectedMode != MatchMode.CORRESPONDENCE) {
+                        OutlinedButton(
+                            onClick = { selectedMode = MatchMode.CORRESPONDENCE },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("open_correspondence_slots_button"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF59E0B))
+                        ) {
+                            Icon(Icons.Default.SportsEsports, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "5 CORRESPONDENCE GAMES (SLOTS 1-5)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
                     // Load Correspondence Turn Code
                     OutlinedButton(
                         onClick = { showImportDialog = true },
@@ -606,6 +673,26 @@ fun MainMenuScreen(
                             fontSize = 12.sp
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = { showMariaDbSettings = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("mariadb_config_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981))
+                    ) {
+                        Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "MARIADB SERVER CONFIG (trsbox.net)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 
@@ -613,6 +700,12 @@ fun MainMenuScreen(
                 CorrespondenceImportDialog(
                     onLoadCode = onLoadCorrespondenceCode,
                     onDismiss = { showImportDialog = false }
+                )
+            }
+
+            if (showMariaDbSettings) {
+                MariaDbSettingsDialog(
+                    onDismiss = { showMariaDbSettings = false }
                 )
             }
         }

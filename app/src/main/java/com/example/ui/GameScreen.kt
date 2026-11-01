@@ -411,7 +411,8 @@ fun GameScreen(
                     winnerName = matchWinner?.name ?: "",
                     p1Name = p1,
                     p2Name = p2,
-                    onContinue = { viewModel.continueAfterShare() }
+                    onContinue = { viewModel.continueAfterShare() },
+                    onMainMenu = { viewModel.returnToMenu() }
                 )
             }
             else -> { /* In normal play or firing */ }

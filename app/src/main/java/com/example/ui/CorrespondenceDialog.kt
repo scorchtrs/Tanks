@@ -76,7 +76,8 @@ fun CorrespondenceShareDialog(
     winnerName: String = "",
     p1Name: String = "Player 1",
     p2Name: String = "Player 2",
-    onContinue: () -> Unit
+    onContinue: () -> Unit,
+    onMainMenu: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -376,13 +377,27 @@ fun CorrespondenceShareDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Button(
-                    onClick = onContinue,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("CONTINUE PLAYING", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = onMainMenu,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF94A3B8))
+                    ) {
+                        Text("MAIN MENU", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = onContinue,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E))
+                    ) {
+                        Text("CONTINUE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             }
         }

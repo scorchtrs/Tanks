@@ -36,9 +36,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,15 +48,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.correspondence.CorrespondenceSlotsManager
 import com.example.model.AiDifficulty
 import com.example.model.GameSettings
 import com.example.model.MatchMode
 import com.example.model.WindMode
+import kotlinx.coroutines.launch
 
 @Composable
 fun MainMenuScreen(
@@ -73,6 +78,16 @@ fun MainMenuScreen(
     var selectedWind by remember { mutableStateOf(currentSettings.windMode) }
     var showImportDialog by remember { mutableStateOf(false) }
     var showMariaDbSettings by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Automatically get current game state of each game from remote database when correspondence play is active/selected
+    LaunchedEffect(selectedMode) {
+        if (selectedMode == MatchMode.CORRESPONDENCE) {
+            CorrespondenceSlotsManager.refreshAllSlots(context)
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -162,7 +177,10 @@ fun MainMenuScreen(
                                     subtitle = "Async duel via turn share code",
                                     icon = Icons.Default.Email,
                                     isSelected = selectedMode == MatchMode.CORRESPONDENCE,
-                                    onClick = { selectedMode = MatchMode.CORRESPONDENCE }
+                                    onClick = { 
+                                        selectedMode = MatchMode.CORRESPONDENCE
+                                        scope.launch { CorrespondenceSlotsManager.refreshAllSlots(context) }
+                                    }
                                 )
                             }
                         }
@@ -460,7 +478,10 @@ fun MainMenuScreen(
                                 subtitle = "Async duel via turn share code / messages",
                                 icon = Icons.Default.Email,
                                 isSelected = selectedMode == MatchMode.CORRESPONDENCE,
-                                onClick = { selectedMode = MatchMode.CORRESPONDENCE }
+                                onClick = { 
+                                    selectedMode = MatchMode.CORRESPONDENCE
+                                    scope.launch { CorrespondenceSlotsManager.refreshAllSlots(context) }
+                                }
                             )
                         }
                     }
@@ -636,7 +657,10 @@ fun MainMenuScreen(
 
                     if (selectedMode != MatchMode.CORRESPONDENCE) {
                         OutlinedButton(
-                            onClick = { selectedMode = MatchMode.CORRESPONDENCE },
+                            onClick = { 
+                                selectedMode = MatchMode.CORRESPONDENCE
+                                scope.launch { CorrespondenceSlotsManager.refreshAllSlots(context) }
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)

@@ -1,13 +1,16 @@
 package com.example.viewmodel
 
+import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.ArtilleryAi
 import com.example.audio.RetroAudioPlayer
 import com.example.correspondence.CorrespondenceManager
+import com.example.correspondence.CorrespondenceSlotsManager
 import com.example.correspondence.CorrespondenceTurnData
 import com.example.correspondence.MariaDbManager
 import com.example.correspondence.CraterRecord
@@ -53,7 +56,7 @@ enum class GameScreenState {
     CORRESPONDENCE_SHARE
 }
 
-class GameViewModel : ViewModel() {
+class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     val terrain = TerrainEngine(pointCount = 500, worldWidth = 1000f, worldHeight = 600f)
     val ballistics = BallisticsEngine()
@@ -130,6 +133,7 @@ class GameViewModel : ViewModel() {
 
     init {
         startMatch()
+        _screenState.value = GameScreenState.MENU
     }
 
     fun updateSettings(newSettings: GameSettings) {
@@ -727,12 +731,42 @@ class GameViewModel : ViewModel() {
             // Check match win
             val targetWins = (_settings.value.roundsCount / 2) + 1
             val maxScore = _roundScores.value.values.maxOrNull() ?: 0
-            if (maxScore >= targetWins || _currentRound.value >= _settings.value.roundsCount) {
+            val isGameOver = maxScore >= targetWins || _currentRound.value >= _settings.value.roundsCount || _settings.value.matchMode == MatchMode.CORRESPONDENCE
+            if (isGameOver) {
                 _matchWinner.value = winner
-                if (_settings.value.matchMode == MatchMode.CORRESPONDENCE && lastFiredData != null) {
-                    val code = CorrespondenceManager.encodeTurn(lastFiredData!!)
+                if (_settings.value.matchMode == MatchMode.CORRESPONDENCE) {
+                    val p1 = _tanks.value.getOrNull(0)
+                    val p2 = _tanks.value.getOrNull(1)
+                    val winnerName = winner?.name ?: if ((p1?.health ?: 0) > 0) p1?.name ?: "" else p2?.name ?: ""
+                    val finalTurnData = CorrespondenceTurnData(
+                        turnNumber = _currentTurnNumber.value,
+                        roundNumber = _currentRound.value,
+                        seed = terrainSeed,
+                        windSpeed = _windSpeed.value,
+                        activeTankIndex = _activeTankIndex.value,
+                        p1Health = p1?.health ?: 0,
+                        p1Shield = p1?.shield ?: 0,
+                        p1Cash = p1?.cash ?: 0,
+                        p1X = p1?.x ?: 120f,
+                        p2Health = p2?.health ?: 0,
+                        p2Shield = p2?.shield ?: 0,
+                        p2Cash = p2?.cash ?: 0,
+                        p2X = p2?.x ?: 880f,
+                        lastFiredPlayerId = lastFiredData?.lastFiredPlayerId ?: -1,
+                        lastFiredAngle = lastFiredData?.lastFiredAngle ?: 0f,
+                        lastFiredPower = lastFiredData?.lastFiredPower ?: 0f,
+                        lastWeaponName = lastFiredData?.lastWeaponName ?: "",
+                        craters = recordedCraters.toList(),
+                        crates = _powerUpCrates.value.map { CrateRecord(it.type, it.x, it.isGrounded) },
+                        isGameOver = true,
+                        winnerName = winnerName
+                    )
+                    val code = CorrespondenceManager.encodeTurn(finalTurnData)
                     _lastTurnCode.value = code
                     _screenState.value = GameScreenState.CORRESPONDENCE_SHARE
+
+                    // Automatically update remote database after game over in correspondence play
+                    autoSaveCorrespondenceTurn(finalTurnData, code, isGameOver = true, winnerName = winnerName)
                 } else {
                     _screenState.value = GameScreenState.MATCH_OVER
                 }
@@ -768,11 +802,39 @@ class GameViewModel : ViewModel() {
             spawnSupplyCrate(forced = false)
         }
 
-        // If correspondence play, pause for share
-        if (_settings.value.matchMode == MatchMode.CORRESPONDENCE && lastFiredData != null) {
-            val code = CorrespondenceManager.encodeTurn(lastFiredData!!)
+        // If correspondence play, automatically update remote database after each turn and pause for share/sync
+        if (_settings.value.matchMode == MatchMode.CORRESPONDENCE) {
+            val p1 = _tanks.value.getOrNull(0)
+            val p2 = _tanks.value.getOrNull(1)
+            val turnData = CorrespondenceTurnData(
+                turnNumber = _currentTurnNumber.value,
+                roundNumber = _currentRound.value,
+                seed = terrainSeed,
+                windSpeed = _windSpeed.value,
+                activeTankIndex = nextIdx,
+                p1Health = p1?.health ?: 100,
+                p1Shield = p1?.shield ?: 0,
+                p1Cash = p1?.cash ?: 200,
+                p1X = p1?.x ?: 120f,
+                p2Health = p2?.health ?: 100,
+                p2Shield = p2?.shield ?: 0,
+                p2Cash = p2?.cash ?: 200,
+                p2X = p2?.x ?: 880f,
+                lastFiredPlayerId = lastFiredData?.lastFiredPlayerId ?: -1,
+                lastFiredAngle = lastFiredData?.lastFiredAngle ?: 0f,
+                lastFiredPower = lastFiredData?.lastFiredPower ?: 0f,
+                lastWeaponName = lastFiredData?.lastWeaponName ?: "",
+                craters = recordedCraters.toList(),
+                crates = _powerUpCrates.value.map { CrateRecord(it.type, it.x, it.isGrounded) },
+                isGameOver = false,
+                winnerName = ""
+            )
+            val code = CorrespondenceManager.encodeTurn(turnData)
             _lastTurnCode.value = code
             _screenState.value = GameScreenState.CORRESPONDENCE_SHARE
+
+            // Automatically update remote database after each turn
+            autoSaveCorrespondenceTurn(turnData, code, isGameOver = false, winnerName = "")
             return
         }
 
@@ -813,6 +875,44 @@ class GameViewModel : ViewModel() {
             delay(900)
 
             fireWeapon()
+        }
+    }
+
+    private fun autoSaveCorrespondenceTurn(
+        turnData: CorrespondenceTurnData,
+        turnCode: String,
+        isGameOver: Boolean,
+        winnerName: String
+    ) {
+        val appContext = getApplication<Application>()
+        viewModelScope.launch {
+            val p1 = _tanks.value.getOrNull(0)?.name ?: "Player 1"
+            val p2 = _tanks.value.getOrNull(1)?.name ?: "Player 2"
+            val matchId = currentMatchId.value.trim().ifBlank { "EARTH-GAME-1" }
+            Log.d("GameViewModel", "Auto-saving correspondence turn #${turnData.turnNumber} to $matchId (gameOver=$isGameOver)")
+            val result = MariaDbManager.saveTurn(
+                context = appContext,
+                matchId = matchId,
+                turnData = turnData,
+                turnCode = turnCode,
+                p1Name = p1,
+                p2Name = p2,
+                isGameOver = isGameOver,
+                winnerName = winnerName
+            )
+            result.fold(
+                onSuccess = {
+                    Log.i("GameViewModel", "Turn #${turnData.turnNumber} auto-saved successfully to MariaDB earth")
+                    addFloatingText(
+                        if (isGameOver) "GAME OVER AUTO-SAVED TO DB" else "TURN #${turnData.turnNumber} AUTO-SAVED TO DB",
+                        500f, 70f, Color(0xFF10B981)
+                    )
+                    CorrespondenceSlotsManager.refreshAllSlots(appContext)
+                },
+                onFailure = { err ->
+                    Log.e("GameViewModel", "Failed to auto-save turn to MariaDB", err)
+                }
+            )
         }
     }
 
